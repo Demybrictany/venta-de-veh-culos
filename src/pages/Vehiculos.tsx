@@ -1,4 +1,10 @@
-import { useState, useEffect, type ChangeEvent, type FormEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import axios from "axios";
 import {
   listarVehiculosActivos,
@@ -18,23 +24,60 @@ const formInicial: Vehiculo = {
   precioDia: 0,
 };
 
+const obtenerMensajeError = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    return error.response?.data?.mensaje ?? error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Ocurrió un error inesperado";
+};
+
+const obtenerVehiculosActivos = async (): Promise<Vehiculo[]> => {
+  const respuesta = await listarVehiculosActivos();
+  if (!Array.isArray(respuesta.data)) {
+    throw new Error(
+      "La API no devolvió una lista de vehículos. Revisa VITE_API_URL y el endpoint del backend.",
+    );
+  }
+  return respuesta.data;
+};
+
 function Vehiculos() {
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [form, setForm] = useState<Vehiculo>(formInicial);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [mensaje, setMensaje] = useState("");
+  const [errorCarga, setErrorCarga] = useState("");
 
-  const cargarVehiculos = async () => {
+  const cargarVehiculos = useCallback(async () => {
     try {
-      const respuesta = await listarVehiculosActivos();
-      setVehiculos(respuesta.data);
+      setVehiculos(await obtenerVehiculosActivos());
+      setErrorCarga("");
     } catch (error) {
+      setErrorCarga(obtenerMensajeError(error));
       console.error("Error al listar vehiculos", error);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    cargarVehiculos();
+    let cancelado = false;
+    void obtenerVehiculosActivos().then(
+      (vehiculos) => {
+        if (cancelado) return;
+        setVehiculos(vehiculos);
+        setErrorCarga("");
+      },
+      (error: unknown) => {
+        if (cancelado) return;
+        setErrorCarga(obtenerMensajeError(error));
+        console.error("Error al listar vehiculos", error);
+      },
+    );
+    return () => {
+      cancelado = true;
+    };
   }, []);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -43,16 +86,6 @@ function Vehiculos() {
       ...prev,
       [name]: name === "precioDia" ? Number(value) : value,
     }));
-  };
-
-  const obtenerMensajeError = (error: unknown): string => {
-    if (axios.isAxiosError(error)) {
-      return error.response?.data?.mensaje ?? error.message;
-    }
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return "Ocurrió un error inesperado";
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -129,6 +162,7 @@ function Vehiculos() {
       </form>
 
       <h2 className="section-title">Listado de Vehículos</h2>
+      {errorCarga && <p className="mensaje" role="alert">{errorCarga}</p>}
       <div className="vehiculos-table-wrap">
         <table className="vehiculos-table">
           <thead>
